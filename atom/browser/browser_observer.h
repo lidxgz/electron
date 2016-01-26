@@ -9,6 +9,8 @@
 
 namespace atom {
 
+class LoginHandler;
+
 class BrowserObserver {
  public:
   // The browser is about to close all windows.
@@ -32,13 +34,16 @@ class BrowserObserver {
   // Browser is used to open a url.
   virtual void OnOpenURL(const std::string& url) {}
 
-  // The browser is activated with no open windows (usually by clicking on the
-  // dock icon).
-  virtual void OnActivateWithNoOpenWindows() {}
+  // The browser is activated with visible/invisible windows (usually by
+  // clicking on the dock icon).
+  virtual void OnActivate(bool has_visible_windows) {}
 
   // The browser has finished loading.
   virtual void OnWillFinishLaunching() {}
   virtual void OnFinishLaunching() {}
+
+  // The browser requests HTTP login.
+  virtual void OnLogin(LoginHandler* login_handler) {}
 
  protected:
   virtual ~BrowserObserver() {}

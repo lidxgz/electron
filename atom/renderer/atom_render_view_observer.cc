@@ -7,46 +7,62 @@
 #include <string>
 #include <vector>
 
-#include "atom/common/api/api_messages.h"
+// Put this before event_emitter_caller.h to have string16 support.
 #include "atom/common/native_mate_converters/string16_converter.h"
+
+#include "atom/common/api/api_messages.h"
+#include "atom/common/api/event_emitter_caller.h"
 #include "atom/common/native_mate_converters/value_converter.h"
+#include "atom/common/node_includes.h"
 #include "atom/common/options_switches.h"
 #include "atom/renderer/atom_renderer_client.h"
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/public/renderer/render_view.h"
 #include "ipc/ipc_message_macros.h"
+#include "net/base/net_module.h"
+#include "net/grit/net_resources.h"
 #include "third_party/WebKit/public/web/WebDraggableRegion.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebView.h"
-
-#include "atom/common/node_includes.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "native_mate/dictionary.h"
 
 namespace atom {
 
 namespace {
 
 bool GetIPCObject(v8::Isolate* isolate,
-                  v8::Handle<v8::Context> context,
-                  v8::Handle<v8::Object>* ipc) {
-  v8::Handle<v8::String> key = mate::StringToV8(isolate, "ipc");
-  v8::Handle<v8::Value> value = context->Global()->GetHiddenValue(key);
+                  v8::Local<v8::Context> context,
+                  v8::Local<v8::Object>* ipc) {
+  v8::Local<v8::String> key = mate::StringToV8(isolate, "ipc");
+  v8::Local<v8::Value> value = context->Global()->GetHiddenValue(key);
   if (value.IsEmpty() || !value->IsObject())
     return false;
   *ipc = value->ToObject();
   return true;
 }
 
-std::vector<v8::Handle<v8::Value>> ListValueToVector(
+std::vector<v8::Local<v8::Value>> ListValueToVector(
     v8::Isolate* isolate,
     const base::ListValue& list) {
-  v8::Handle<v8::Value> array = mate::ConvertToV8(isolate, list);
-  std::vector<v8::Handle<v8::Value>> result;
+  v8::Local<v8::Value> array = mate::ConvertToV8(isolate, list);
+  std::vector<v8::Local<v8::Value>> result;
   mate::ConvertFromV8(isolate, array, &result);
   return result;
+}
+
+base::StringPiece NetResourceProvider(int key) {
+  if (key == IDR_DIR_HEADER_HTML) {
+    base::StringPiece html_data =
+        ui::ResourceBundle::GetSharedInstance().GetRawDataResource(
+            IDR_DIR_HEADER_HTML);
+    return html_data;
+  }
+  return base::StringPiece();
 }
 
 }  // namespace
@@ -57,6 +73,8 @@ AtomRenderViewObserver::AtomRenderViewObserver(
     : content::RenderViewObserver(render_view),
       renderer_client_(renderer_client),
       document_created_(false) {
+  // Initialise resource for directory listing.
+  net::NetModule::SetResourceProvider(NetResourceProvider);
 }
 
 AtomRenderViewObserver::~AtomRenderViewObserver() {
@@ -68,7 +86,7 @@ void AtomRenderViewObserver::DidCreateDocumentElement(
 
   // Read --zoom-factor from command line.
   std::string zoom_factor_str = base::CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(switches::kZoomFactor);;
+      GetSwitchValueASCII(switches::kZoomFactor);
   if (zoom_factor_str.empty())
     return;
   double zoom_factor;
@@ -119,13 +137,15 @@ void AtomRenderViewObserver::OnBrowserMessage(const base::string16& channel,
   v8::Local<v8::Context> context = frame->mainWorldScriptContext();
   v8::Context::Scope context_scope(context);
 
-  std::vector<v8::Handle<v8::Value>> arguments = ListValueToVector(
-      isolate, args);
-  arguments.insert(arguments.begin(), mate::ConvertToV8(isolate, channel));
-
-  v8::Handle<v8::Object> ipc;
-  if (GetIPCObject(isolate, context, &ipc))
-    node::MakeCallback(isolate, ipc, "emit", arguments.size(), &arguments[0]);
+  v8::Local<v8::Object> ipc;
+  if (GetIPCObject(isolate, context, &ipc)) {
+    auto args_vector = ListValueToVector(isolate, args);
+    // Insert the Event object, event.sender is ipc.
+    mate::Dictionary event = mate::Dictionary::CreateEmpty(isolate);
+    event.Set("sender", ipc);
+    args_vector.insert(args_vector.begin(), event.GetHandle());
+    mate::EmitEvent(isolate, ipc, channel, args_vector);
+  }
 }
 
 }  // namespace atom

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 
@@ -24,8 +25,9 @@ class ScopedTemporaryFile;
 class Archive {
  public:
   struct FileInfo {
-    FileInfo() : size(0), offset(0) {}
+    FileInfo() : unpacked(false), executable(false), size(0), offset(0) {}
     bool unpacked;
+    bool executable;
     uint32 size;
     uint64 offset;
   };
@@ -59,16 +61,22 @@ class Archive {
   // For unpacked file, this method will return its real path.
   bool CopyFileOut(const base::FilePath& path, base::FilePath* out);
 
+  // Returns the file's fd.
+  int GetFD() const;
+
   base::FilePath path() const { return path_; }
   base::DictionaryValue* header() const { return header_.get(); }
 
  private:
   base::FilePath path_;
+  base::File file_;
+  int fd_;
   uint32 header_size_;
   scoped_ptr<base::DictionaryValue> header_;
 
   // Cached external temporary files.
-  base::ScopedPtrHashMap<base::FilePath, ScopedTemporaryFile> external_files_;
+  base::ScopedPtrHashMap<base::FilePath, scoped_ptr<ScopedTemporaryFile>>
+      external_files_;
 
   DISALLOW_COPY_AND_ASSIGN(Archive);
 };

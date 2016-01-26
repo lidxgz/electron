@@ -11,15 +11,15 @@
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
+
 namespace atom {
 
 class NativeWindowObserver {
  public:
   virtual ~NativeWindowObserver() {}
-
-  // Called when the web page of the window has updated it's document title.
-  virtual void OnPageTitleUpdated(bool* prevent_default,
-                                  const std::string& title) {}
 
   // Called when the web page in window wants to create a popup window.
   virtual void WillCreatePopupWindow(const base::string16& frame_name,
@@ -47,17 +47,29 @@ class NativeWindowObserver {
   virtual void OnWindowUnmaximize() {}
   virtual void OnWindowMinimize() {}
   virtual void OnWindowRestore() {}
+  virtual void OnWindowResize() {}
+  virtual void OnWindowMove() {}
+  virtual void OnWindowMoved() {}
+  virtual void OnWindowScrollTouchBegin() {}
+  virtual void OnWindowScrollTouchEnd() {}
   virtual void OnWindowEnterFullScreen() {}
   virtual void OnWindowLeaveFullScreen() {}
+  virtual void OnWindowEnterHtmlFullScreen() {}
+  virtual void OnWindowLeaveHtmlFullScreen() {}
 
-  // Called when devtools window gets focused.
-  virtual void OnDevToolsFocus() {}
+  // Called when window message received
+  #if defined(OS_WIN)
+  virtual void OnWindowMessage(UINT message, WPARAM w_param, LPARAM l_param) {}
+  #endif
 
   // Called when renderer is hung.
   virtual void OnRendererUnresponsive() {}
 
   // Called when renderer recovers.
   virtual void OnRendererResponsive() {}
+
+  // Called on Windows when App Commands arrive (WM_APPCOMMAND)
+  virtual void OnExecuteWindowsCommand(const std::string& command_name) {}
 };
 
 }  // namespace atom

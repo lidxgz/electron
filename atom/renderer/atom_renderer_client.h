@@ -6,6 +6,7 @@
 #define ATOM_RENDERER_ATOM_RENDERER_CLIENT_H_
 
 #include <string>
+#include <vector>
 
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/render_process_observer.h"
@@ -21,6 +22,9 @@ class AtomRendererClient : public content::ContentRendererClient,
   AtomRendererClient();
   virtual ~AtomRendererClient();
 
+  void DidCreateScriptContext(blink::WebFrame* frame,
+                              v8::Handle<v8::Context> context);
+
  private:
   enum NodeIntegration {
     ALL,
@@ -34,6 +38,7 @@ class AtomRendererClient : public content::ContentRendererClient,
 
   // content::ContentRendererClient:
   void RenderThreadStarted() override;
+  void RenderFrameCreated(content::RenderFrame*) override;
   void RenderViewCreated(content::RenderView*) override;
   blink::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
       blink::WebSpeechSynthesizerClient* client) override;
@@ -41,11 +46,7 @@ class AtomRendererClient : public content::ContentRendererClient,
                             blink::WebLocalFrame* frame,
                             const blink::WebPluginParams& params,
                             blink::WebPlugin** plugin) override;
-  void DidCreateScriptContext(blink::WebFrame* frame,
-                              v8::Handle<v8::Context> context,
-                              int extension_group,
-                              int world_id) override;
-  bool ShouldFork(blink::WebFrame* frame,
+  bool ShouldFork(blink::WebLocalFrame* frame,
                   const GURL& url,
                   const std::string& http_method,
                   bool is_initial_navigation,
@@ -55,14 +56,10 @@ class AtomRendererClient : public content::ContentRendererClient,
       content::RenderFrame* render_frame,
       const std::string& mime_type,
       const GURL& original_url) override;
-
-  void EnableWebRuntimeFeatures();
+  void AddKeySystems(std::vector<media::KeySystemInfo>* key_systems) override;
 
   scoped_ptr<NodeBindings> node_bindings_;
   scoped_ptr<AtomBindings> atom_bindings_;
-
-  // The main frame.
-  blink::WebFrame* main_frame_;
 
   DISALLOW_COPY_AND_ASSIGN(AtomRendererClient);
 };

@@ -8,11 +8,12 @@
 #include <string>
 
 #include "atom/browser/api/event_emitter.h"
+#include "atom/browser/atom_browser_client.h"
 #include "atom/browser/browser_observer.h"
-#include "base/callback.h"
+#include "atom/common/native_mate_converters/callback.h"
+#include "chrome/browser/process_singleton.h"
+#include "content/public/browser/gpu_data_manager_observer.h"
 #include "native_mate/handle.h"
-
-class GURL;
 
 namespace base {
 class FilePath;
@@ -26,11 +27,11 @@ namespace atom {
 
 namespace api {
 
-class App : public mate::EventEmitter,
-            public BrowserObserver {
+class App : public AtomBrowserClient::Delegate,
+            public mate::EventEmitter,
+            public BrowserObserver,
+            public content::GpuDataManagerObserver {
  public:
-  typedef base::Callback<void(std::string)> ResolveProxyCallback;
-
   static mate::Handle<App> Create(v8::Isolate* isolate);
 
  protected:
@@ -44,9 +45,31 @@ class App : public mate::EventEmitter,
   void OnQuit() override;
   void OnOpenFile(bool* prevent_default, const std::string& file_path) override;
   void OnOpenURL(const std::string& url) override;
-  void OnActivateWithNoOpenWindows() override;
+  void OnActivate(bool has_visible_windows) override;
   void OnWillFinishLaunching() override;
   void OnFinishLaunching() override;
+  void OnLogin(LoginHandler* login_handler) override;
+
+  // content::ContentBrowserClient:
+  void AllowCertificateError(
+      int render_process_id,
+      int render_frame_id,
+      int cert_error,
+      const net::SSLInfo& ssl_info,
+      const GURL& request_url,
+      content::ResourceType resource_type,
+      bool overridable,
+      bool strict_enforcement,
+      bool expired_previous_decision,
+      const base::Callback<void(bool)>& callback,
+      content::CertificateRequestResultType* request) override;
+  void SelectClientCertificate(
+      content::WebContents* web_contents,
+      net::SSLCertRequestInfo* cert_request_info,
+      scoped_ptr<content::ClientCertificateDelegate> delegate) override;
+
+  // content::GpuDataManagerObserver:
+  void OnGpuProcessCrashed(base::TerminationStatus exit_code) override;
 
   // mate::Wrappable:
   mate::ObjectTemplateBuilder GetObjectTemplateBuilder(
@@ -59,8 +82,17 @@ class App : public mate::EventEmitter,
                const std::string& name,
                const base::FilePath& path);
 
-  void ResolveProxy(const GURL& url, ResolveProxyCallback callback);
   void SetDesktopName(const std::string& desktop_name);
+  void AllowNTLMCredentialsForAllDomains(bool should_allow);
+  bool MakeSingleInstance(
+      const ProcessSingleton::NotificationCallback& callback);
+  std::string GetLocale();
+
+#if defined(OS_WIN)
+  bool IsAeroGlassEnabled();
+#endif
+
+  scoped_ptr<ProcessSingleton> process_singleton_;
 
   DISALLOW_COPY_AND_ASSIGN(App);
 };

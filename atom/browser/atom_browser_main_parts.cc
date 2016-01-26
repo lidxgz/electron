@@ -4,29 +4,40 @@
 
 #include "atom/browser/atom_browser_main_parts.h"
 
+#include "atom/browser/api/trackable_object.h"
 #include "atom/browser/atom_browser_client.h"
 #include "atom/browser/atom_browser_context.h"
+#include "atom/browser/bridge_task_runner.h"
 #include "atom/browser/browser.h"
 #include "atom/browser/javascript_environment.h"
 #include "atom/browser/node_debugger.h"
 #include "atom/common/api/atom_bindings.h"
 #include "atom/common/node_bindings.h"
+#include "atom/common/node_includes.h"
 #include "base/command_line.h"
+#include "base/thread_task_runner_handle.h"
+#include "chrome/browser/browser_process.h"
 #include "v8/include/v8-debug.h"
 
 #if defined(USE_X11)
 #include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
+#include "ui/events/devices/x11/touch_factory_x11.h"
 #endif
 
-#include "atom/common/node_includes.h"
-
 namespace atom {
+
+template<typename T>
+void Erase(T* container, typename T::iterator iter) {
+  container->erase(iter);
+}
 
 // static
 AtomBrowserMainParts* AtomBrowserMainParts::self_ = NULL;
 
 AtomBrowserMainParts::AtomBrowserMainParts()
-    : browser_(new Browser),
+    : fake_browser_process_(new BrowserProcess),
+      exit_code_(nullptr),
+      browser_(new Browser),
       node_bindings_(NodeBindings::Create(true)),
       atom_bindings_(new AtomBindings),
       gc_timer_(true, true) {
@@ -43,19 +54,42 @@ AtomBrowserMainParts* AtomBrowserMainParts::Get() {
   return self_;
 }
 
-brightray::BrowserContext* AtomBrowserMainParts::CreateBrowserContext() {
-  return new AtomBrowserContext();
+bool AtomBrowserMainParts::SetExitCode(int code) {
+  if (!exit_code_)
+    return false;
+
+  *exit_code_ = code;
+  return true;
+}
+
+int AtomBrowserMainParts::GetExitCode() {
+  return exit_code_ != nullptr ? *exit_code_ : 0;
+}
+
+base::Closure AtomBrowserMainParts::RegisterDestructionCallback(
+    const base::Closure& callback) {
+  auto iter = destructors_.insert(destructors_.end(), callback);
+  return base::Bind(&Erase<std::list<base::Closure>>, &destructors_, iter);
+}
+
+void AtomBrowserMainParts::PreEarlyInitialization() {
+  brightray::BrowserMainParts::PreEarlyInitialization();
+#if defined(OS_POSIX)
+  HandleSIGCHLD();
+#endif
 }
 
 void AtomBrowserMainParts::PostEarlyInitialization() {
   brightray::BrowserMainParts::PostEarlyInitialization();
 
-#if defined(USE_X11)
-  SetDPIFromGSettings();
-#endif
+  // Temporary set the bridge_task_runner_ as current thread's task runner,
+  // so we can fool gin::PerIsolateData to use it as its task runner, instead
+  // of getting current message loop's task runner, which is null for now.
+  bridge_task_runner_ = new BridgeTaskRunner;
+  base::ThreadTaskRunnerHandle handle(bridge_task_runner_);
 
-  // The ProxyResolverV8 has setup a complete V8 environment, in order to avoid
-  // conflicts we only initialize our V8 environment after that.
+  // The ProxyResolverV8 has setup a complete V8 environment, in order to
+  // avoid conflicts we only initialize our V8 environment after that.
   js_env_.reset(new JavascriptEnvironment);
 
   node_bindings_->Initialize();
@@ -83,6 +117,10 @@ void AtomBrowserMainParts::PreMainMessageLoopRun() {
   node_bindings_->PrepareMessageLoop();
   node_bindings_->RunMessageLoop();
 
+#if defined(USE_X11)
+  ui::TouchFactory::SetTouchDeviceListFromCommandLine();
+#endif
+
   // Start idle gc.
   gc_timer_.Start(
       FROM_HERE, base::TimeDelta::FromMinutes(1),
@@ -91,6 +129,8 @@ void AtomBrowserMainParts::PreMainMessageLoopRun() {
                  1000));
 
   brightray::BrowserMainParts::PreMainMessageLoopRun();
+  bridge_task_runner_->MessageLoopIsReady();
+  bridge_task_runner_ = nullptr;
 
 #if defined(USE_X11)
   libgtk2ui::GtkInitFromCommandLine(*base::CommandLine::ForCurrentProcess());
@@ -101,6 +141,45 @@ void AtomBrowserMainParts::PreMainMessageLoopRun() {
   Browser::Get()->WillFinishLaunching();
   Browser::Get()->DidFinishLaunching();
 #endif
+}
+
+bool AtomBrowserMainParts::MainMessageLoopRun(int* result_code) {
+  exit_code_ = result_code;
+  return brightray::BrowserMainParts::MainMessageLoopRun(result_code);
+}
+
+void AtomBrowserMainParts::PostMainMessageLoopStart() {
+  brightray::BrowserMainParts::PostMainMessageLoopStart();
+#if defined(OS_POSIX)
+  HandleShutdownSignals();
+#endif
+}
+
+void AtomBrowserMainParts::PostMainMessageLoopRun() {
+  brightray::BrowserMainParts::PostMainMessageLoopRun();
+
+#if defined(OS_MACOSX)
+  FreeAppDelegate();
+#endif
+
+  // Make sure destruction callbacks are called before message loop is
+  // destroyed, otherwise some objects that need to be deleted on IO thread
+  // won't be freed.
+  // We don't use ranged for loop because iterators are getting invalided when
+  // the callback runs.
+  for (auto iter = destructors_.begin(); iter != destructors_.end();) {
+    base::Closure& callback = *iter;
+    ++iter;
+    callback.Run();
+  }
+
+  // Destroy JavaScript environment immediately after running destruction
+  // callbacks.
+  gc_timer_.Stop();
+  node_debugger_.reset();
+  atom_bindings_.reset();
+  node_bindings_.reset();
+  js_env_.reset();
 }
 
 }  // namespace atom

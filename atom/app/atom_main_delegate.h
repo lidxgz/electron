@@ -21,11 +21,10 @@ class AtomMainDelegate : public brightray::MainDelegate {
   void PreSandboxStartup() override;
   content::ContentBrowserClient* CreateContentBrowserClient() override;
   content::ContentRendererClient* CreateContentRendererClient() override;
+  content::ContentUtilityClient* CreateContentUtilityClient() override;
 
   // brightray::MainDelegate:
   scoped_ptr<brightray::ContentClient> CreateContentClient() override;
-  void AddDataPackFromPath(
-      ui::ResourceBundle* bundle, const base::FilePath& pak_dir) override;
 #if defined(OS_MACOSX)
   void OverrideChildProcessPath() override;
   void OverrideFrameworkBundlePath() override;
@@ -35,6 +34,7 @@ class AtomMainDelegate : public brightray::MainDelegate {
   brightray::ContentClient content_client_;
   scoped_ptr<content::ContentBrowserClient> browser_client_;
   scoped_ptr<content::ContentRendererClient> renderer_client_;
+  scoped_ptr<content::ContentUtilityClient> utility_client_;
 
   DISALLOW_COPY_AND_ASSIGN(AtomMainDelegate);
 };

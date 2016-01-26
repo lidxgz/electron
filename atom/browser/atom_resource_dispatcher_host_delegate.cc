@@ -1,33 +1,40 @@
-// Copyright (c) 2014 GitHub, Inc. All rights reserved.
+// Copyright (c) 2015 GitHub, Inc.
 // Use of this source code is governed by the MIT license that can be
 // found in the LICENSE file.
 
 #include "atom/browser/atom_resource_dispatcher_host_delegate.h"
 
-#include <string>
+#include "atom/browser/login_handler.h"
+#include "atom/common/platform_util.h"
+#include "content/public/browser/browser_thread.h"
+#include "net/base/escape.h"
+#include "url/gurl.h"
 
-#include "base/logging.h"
-#include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/resource_request_info.h"
-#include "net/http/http_response_headers.h"
-#include "net/url_request/url_request.h"
+using content::BrowserThread;
 
 namespace atom {
 
 AtomResourceDispatcherHostDelegate::AtomResourceDispatcherHostDelegate() {
 }
 
-void AtomResourceDispatcherHostDelegate::OnResponseStarted(
-    net::URLRequest* request,
-    content::ResourceContext* resource_context,
-    content::ResourceResponse* response,
-    IPC::Sender* sender) {
-  // Remove the "X-Frame-Options" from response headers for devtools.
-  if (request->url().SchemeIs("chrome-devtools")) {
-    net::HttpResponseHeaders* response_headers = request->response_headers();
-    if (response_headers && response_headers->HasHeader("x-frame-options"))
-      response_headers->RemoveHeader("x-frame-options");
-  }
+bool AtomResourceDispatcherHostDelegate::HandleExternalProtocol(
+    const GURL& url,
+    int render_process_id,
+    int render_view_id,
+    bool is_main_frame,
+    ui::PageTransition transition,
+    bool has_user_gesture) {
+  GURL escaped_url(net::EscapeExternalHandlerValue(url.spec()));
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+      base::Bind(base::IgnoreResult(platform_util::OpenExternal), escaped_url));
+  return true;
+}
+
+content::ResourceDispatcherHostLoginDelegate*
+AtomResourceDispatcherHostDelegate::CreateLoginDelegate(
+    net::AuthChallengeInfo* auth_info,
+    net::URLRequest* request) {
+  return new LoginHandler(auth_info, request);
 }
 
 }  // namespace atom

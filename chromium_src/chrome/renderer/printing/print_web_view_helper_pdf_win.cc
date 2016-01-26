@@ -14,7 +14,6 @@
 #include "printing/pdf_metafile_skia.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
-#include "skia/ext/vector_canvas.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 
@@ -22,7 +21,6 @@ namespace printing {
 
 using blink::WebFrame;
 
-#if 0
 bool PrintWebViewHelper::RenderPreviewPage(
     int page_number,
     const PrintMsg_Print_Params& print_params) {
@@ -54,7 +52,6 @@ bool PrintWebViewHelper::RenderPreviewPage(
   }
   return PreviewPageRendered(page_number, draft_metafile.get());
 }
-#endif
 
 bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
                                           int page_count) {
@@ -138,7 +135,8 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
     printed_page_params.page_size = page_size_in_dpi[i];
     printed_page_params.content_area = content_area_in_dpi[i];
     Send(new PrintHostMsg_DidPrintPage(routing_id(), printed_page_params));
-    printed_page_params.metafile_data_handle = INVALID_HANDLE_VALUE;
+    // Send the rest of the pages with an invalid metafile handle.
+    printed_page_params.metafile_data_handle = base::SharedMemoryHandle();
   }
   return true;
 }
